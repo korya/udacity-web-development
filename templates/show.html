@@ -1,11 +1,11 @@
-<body>
+{% extends "base.html" %}
 
-<h1><a href="/">..</a></h1>
+{% block content %}
 
-<div class="post">
+  <div class="post">
     <div class="post-subject">{{post.subject}}</div>
     <div class="post-content">{{post.content}}</pre>
     <div class="post-date">{{post.date}}</pre>
-</div>
+  </div>
 
-</body>
+{% endblock %}

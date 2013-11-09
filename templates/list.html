@@ -1,16 +1,16 @@
-<body>
+{% extends "base.html" %}
 
-<h1><a href="/newpost">Add new post</a></h1>
+{% block content %}
 
-<hr>
+  <h2><a href="/newpost">Add new post</a></h2>
 
-{% for p in posts %}
-<div class="post">
-    <div class="post-subject"><a href="/show/{{p.key().id()}}">{{p.subject}}</a></div>
-    <div class="post-content">{{p.content}}</div>
-    <div class="post-date">{{p.date}}</div>
-</div>
-<hr>
-{% endfor %}
+  {% for p in posts %}
+    <div class="post">
+      <div class="post-subject"><a href="/show/{{p.key().id()}}">{{p.subject}}</a></div>
+      <div class="post-content">{{p.content}}</div>
+      <div class="post-date">{{p.date}}</div>
+    </div>
+    <hr>
+  {% endfor %}
 
-</body>
+{% endblock %}
