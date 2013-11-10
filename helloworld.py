@@ -2,6 +2,8 @@ import webapp2
 import re
 import os
 import jinja2
+import hashlib
+import hmac
 from google.appengine.ext import db
 
 template_dir = os.path.join(os.path.dirname(__file__), 'templates')
@@ -16,6 +18,25 @@ class BaseTemplateHandler(webapp2.RequestHandler):
 	return t.render(params)
     def render(self, template, **kw):
 	self.write(self.render_str(template, **kw))
+
+class AuthorizeHandler(BaseTemplateHandler):
+    AUTH_COOKIE='UID'
+    AUTH_SECRET='0yaeb00'
+    def make_token(self, username):
+	sig = hmac.new(AuthorizeHandler.AUTH_SECRET, username, hashlib.sha256)
+	return "%s|%s" % (username, sig.hexdigest())
+    def extract_username(self, token):
+	username = token.split("|", 1)[0]
+	if token == self.make_token(username):
+	    return username
+    def makeAuthorized(self, username):
+	token = self.make_token(username)
+	self.response.headers.add_header('Set-Cookie', '%s=%s; Path=/' %
+		(AuthorizeHandler.AUTH_COOKIE, token))
+    def authorize(self):
+	token = self.request.cookies.get(AuthorizeHandler.AUTH_COOKIE)
+	if token:
+	    return self.extract_username(token)
 
 class Param:
     def __init__(self, value="", err_msg="", rexp=None):
@@ -71,7 +92,7 @@ class UserValidate():
     def isValid(self):
 	return all([p.isValid() for p in self.__all_params()])
 
-class SignupHandler(BaseTemplateHandler):
+class SignupHandler(AuthorizeHandler):
     def get(self):
 	self.render("signup.html", user_data=UserValidate())
     def post(self):
@@ -82,10 +103,20 @@ class SignupHandler(BaseTemplateHandler):
 	u.email = EmailParam(self.request.get("email"))
 	u.validate()
 	if u.isValid():
-	    self.redirect("/greetings")
+	    self.makeAuthorized("qweWQE")
+	    self.redirect("/welcome")
 	else:
 	    self.render("signup.html", user_data=u)
 
+class WelcomeHandler(AuthorizeHandler):
+    def get(self):
+	username = self.authorize()
+	if username:
+	    self.render("welcome.html", username=username)
+	else:
+	    self.redirect("/signup");
+
 application = webapp2.WSGIApplication([
+    ('/welcome', WelcomeHandler),
     ('/signup', SignupHandler),
     ], debug=True)
