@@ -4,11 +4,30 @@ import os
 import jinja2
 import hashlib
 import hmac
+import random
+import string
 from google.appengine.ext import db
 
 template_dir = os.path.join(os.path.dirname(__file__), 'templates')
 jinja_env = jinja2.Environment(loader = jinja2.FileSystemLoader(template_dir),
 	autoescape=True)
+
+class SaltyHMAC:
+    @staticmethod
+    def __make_salt(length=5):
+	return ''.join(random.choice(string.letters) for x in xrange(length))
+    @staticmethod
+    def new(name, pw, salt=None):
+	if not salt:
+	    salt=SaltyHMAC.__make_salt()
+	h = hashlib.sha256(name + pw + salt).hexdigest()
+	return '%s,%s' % (h, salt)
+
+class User(db.Model):
+    username = db.StringProperty(required = True)
+    passwd_salt = db.StringProperty(required = True)
+    email = db.StringProperty(required = False)
+    registered_date = db.DateTimeProperty(auto_now_add = True)
 
 class BaseTemplateHandler(webapp2.RequestHandler):
     def write(self, *a, **kw):
@@ -30,7 +49,7 @@ class AuthorizeHandler(BaseTemplateHandler):
 	if token == self.make_token(username):
 	    return username
     def makeAuthorized(self, username):
-	token = self.make_token(username)
+	token = str(self.make_token(username))
 	self.response.headers.add_header('Set-Cookie', '%s=%s; Path=/' %
 		(AuthorizeHandler.AUTH_COOKIE, token))
     def authorize(self):
@@ -55,6 +74,16 @@ class UserParam(Param):
 	Param.__init__(self, value=value,
 		rexp=r"^[a-zA-Z0-9_-]{3,20}$",
 		err_msg="That's not a valid username.")
+    def __is_exists(self):
+	cursor = User.gql("WHERE username = '%s'" % self.value)
+	for u in cursor:
+	    return True
+	return False
+    def validate(self):
+	Param.validate(self)
+	if self.isValid():
+	    if self.__is_exists():
+		self.error = "User exists"
 class PassParam(Param):
     def __init__(self, value=""):
 	Param.__init__(self, value=value,
@@ -91,6 +120,13 @@ class UserValidate():
 	all([p.validate() for p in self.__all_params()])
     def isValid(self):
 	return all([p.isValid() for p in self.__all_params()])
+    def toUser(self):
+	if self.isValid():
+	    hpass = SaltyHMAC.new(self.username.value, self.password.value)
+	    return User(
+		    username=self.username.value,
+		    passwd_salt=hpass,
+		    email=self.email.value)
 
 class SignupHandler(AuthorizeHandler):
     def get(self):
@@ -103,7 +139,9 @@ class SignupHandler(AuthorizeHandler):
 	u.email = EmailParam(self.request.get("email"))
 	u.validate()
 	if u.isValid():
-	    self.makeAuthorized("qweWQE")
+	    user = u.toUser()
+	    user.put()
+	    self.makeAuthorized(user.username)
 	    self.redirect("/welcome")
 	else:
 	    self.render("signup.html", user_data=u)
