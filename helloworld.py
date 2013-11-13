@@ -22,6 +22,9 @@ class SaltyHMAC:
 	    salt=SaltyHMAC.__make_salt()
 	h = hashlib.sha256(name + pw + salt).hexdigest()
 	return '%s,%s' % (h, salt)
+    @staticmethod
+    def get_salt(hpass):
+	return hpass.split(",", 1)[1]
 
 class User(db.Model):
     username = db.StringProperty(required = True)
@@ -74,15 +77,13 @@ class UserParam(Param):
 	Param.__init__(self, value=value,
 		rexp=r"^[a-zA-Z0-9_-]{3,20}$",
 		err_msg="That's not a valid username.")
-    def __is_exists(self):
+    def is_exists(self):
 	cursor = User.gql("WHERE username = '%s'" % self.value)
-	for u in cursor:
-	    return True
-	return False
+	return cursor.count() > 0
     def validate(self):
 	Param.validate(self)
 	if self.isValid():
-	    if self.__is_exists():
+	    if self.is_exists():
 		self.error = "User exists"
 class PassParam(Param):
     def __init__(self, value=""):
@@ -98,6 +99,31 @@ class VerifyParam(Param):
     def validate(self):
 	if not (self.p == self.v):
 	    self.error = VerifyParam.ERR_MSG
+class ExistingUserParam(UserParam):
+    def __init__(self, value=""):
+	UserParam.__init__(self, value=value)
+    def validate(self):
+	Param.validate(self)
+	if self.isValid():
+	    if not self.is_exists():
+		self.error = "User does not exists"
+class ExistingPassParam(PassParam):
+    def __init__(self, value="", username=""):
+	PassParam.__init__(self, value=value)
+	self.username = username
+    def __get_pass_info(self):
+	cursor = User.gql("WHERE username = '%s'" % self.username)
+	# XXX:
+	for u in cursor.fetch(limit=1):
+	    salt = SaltyHMAC.get_salt(u.passwd_salt)
+	    return (salt, u.passwd_salt)
+	return ("", "")
+    def validate(self):
+	Param.validate(self)
+	if self.isValid():
+	    (salt, passwd_salt) = self.__get_pass_info()
+	    if passwd_salt != SaltyHMAC.new(self.username, self.value, salt=salt):
+		self.error = "Password incorrect"
 class EmailParam(Param):
     def __init__(self, value=""):
 	Param.__init__(self, value=value,
@@ -154,7 +180,22 @@ class WelcomeHandler(AuthorizeHandler):
 	else:
 	    self.redirect("/signup");
 
+class LoginHandler(AuthorizeHandler):
+    def get(self):
+	self.render("login.html")
+    def post(self):
+	u = UserValidate()
+	u.username = ExistingUserParam(self.request.get("username"))
+	u.password = ExistingPassParam(self.request.get("password"), u.username.value)
+	u.validate()
+	if u.isValid():
+	    self.makeAuthorized(u.username.value)
+	    self.redirect("/welcome")
+	else:
+	    self.render("login.html", error="Invalid login")
+
 application = webapp2.WSGIApplication([
     ('/welcome', WelcomeHandler),
     ('/signup', SignupHandler),
+    ('/login', LoginHandler),
     ], debug=True)
