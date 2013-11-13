@@ -44,6 +44,7 @@ class BaseTemplateHandler(webapp2.RequestHandler):
 class AuthorizeHandler(BaseTemplateHandler):
     AUTH_COOKIE='UID'
     AUTH_SECRET='0yaeb00'
+    DATE_IN_PAST='Thu, 01 Jan 1970 00:00:00 GMT'
     def make_token(self, username):
 	sig = hmac.new(AuthorizeHandler.AUTH_SECRET, username, hashlib.sha256)
 	return "%s|%s" % (username, sig.hexdigest())
@@ -59,6 +60,9 @@ class AuthorizeHandler(BaseTemplateHandler):
 	token = self.request.cookies.get(AuthorizeHandler.AUTH_COOKIE)
 	if token:
 	    return self.extract_username(token)
+    def unauthorize(self):
+	self.response.headers.add_header('Set-Cookie', '%s=; Path=/; expires=%s' %
+		(AuthorizeHandler.AUTH_COOKIE, AuthorizeHandler.DATE_IN_PAST))
 
 class Param:
     def __init__(self, value="", err_msg="", rexp=None):
@@ -194,8 +198,14 @@ class LoginHandler(AuthorizeHandler):
 	else:
 	    self.render("login.html", error="Invalid login")
 
+class LogoutHandler(AuthorizeHandler):
+    def get(self):
+	self.unauthorize()
+	self.redirect("/signup");
+
 application = webapp2.WSGIApplication([
     ('/welcome', WelcomeHandler),
     ('/signup', SignupHandler),
     ('/login', LoginHandler),
+    ('/logout', LogoutHandler),
     ], debug=True)
