@@ -86,7 +86,7 @@ input[type=submit] {
     border-bottom: 3px solid #666;
 }
 
-.post-title {
+.post-subject {
     font-size: 24px;
     font-weight: bold;
 
@@ -94,12 +94,12 @@ input[type=submit] {
     color: #333;
 }
 
-.post-title:visisted {
+.post-subject:visisted {
     color: #333;
 }
 
 .post-date {
-    position: absolute;
+    position: relative;
     right: 0px;
     bottom: 0px;
     color: #999;
