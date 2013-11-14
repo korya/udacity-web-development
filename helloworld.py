@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import random
 import string
+import json
 from google.appengine.ext import db
 
 template_dir = os.path.join(os.path.dirname(__file__), 'templates')
@@ -32,14 +33,44 @@ class User(db.Model):
     email = db.StringProperty(required = False)
     registered_date = db.DateTimeProperty(auto_now_add = True)
 
+class Renderer():
+    def render(self, template, **params):
+	1/0 # XXX implement me
+class JinjaRenderer(Renderer):
+    def render(self, template, **params):
+	t = jinja_env.get_template(template)
+	return (None, t.render(params))
+class JsonRenderer(Renderer):
+    def render(self, template, **params):
+	content = ''
+	for p in params:
+	    content += json.dumps(json.loads(str(params[p])))
+	return ('application/json; charset=UTF-8', content)
+
 class BaseTemplateHandler(webapp2.RequestHandler):
+    RENDERER_FIELD = 'my__renderer'
+    def __init__(self, request, response):
+	webapp2.RequestHandler.__init__(self, request, response)
+	self.renderers = {}
+	self.renderers['json'] = JsonRenderer()
+	self.renderers['default'] = JinjaRenderer()
     def write(self, *a, **kw):
 	self.response.out.write(*a, **kw)
-    def render_str(self, template, **params):
-	t = jinja_env.get_template(template)
-	return t.render(params)
-    def render(self, template, **kw):
-	self.write(self.render_str(template, **kw))
+    def render(self, template, **params):
+	renderer = self.renderer_get()
+	(content_type, content) = renderer.render(template, **params)
+	if content_type:
+	    self.response.headers['Content-Type'] = content_type;
+	self.write(content)
+    def renderer_set(self, name):
+	if hasattr(self.request, BaseTemplateHandler.RENDERER_FIELD):
+	    1/0 # XXX PANIC!!!
+	setattr(self.request, BaseTemplateHandler.RENDERER_FIELD, name)
+    def renderer_get(self):
+	if hasattr(self.request, BaseTemplateHandler.RENDERER_FIELD):
+	    if getattr(self.request, BaseTemplateHandler.RENDERER_FIELD) in self.renderers:
+		return self.renderers[getattr(self.request, BaseTemplateHandler.RENDERER_FIELD)]
+	return self.renderers['default']
 
 class AuthorizeHandler(BaseTemplateHandler):
     AUTH_COOKIE='UID'
@@ -206,11 +237,22 @@ class LogoutHandler(AuthorizeHandler):
 class Post(db.Model):
     subject = db.StringProperty(required = False)
     content = db.TextProperty(required = False)
-    date = db.DateTimeProperty(auto_now_add = True)
+    created = db.DateTimeProperty(auto_now_add = True)
+    last_modified = db.DateTimeProperty(auto_now = True)
+    def toJson(self):
+	return {
+		'subject': str(self.subject),
+		'content': str(self.subject),
+		'created': str(self.created),
+		'last_modified': str(self.last_modified),
+		};
+    def __repr__(self):
+	return json.dumps(self.toJson())
 
 class ListHandler(BaseTemplateHandler):
     def get(self):
-	self.render("list.html", posts=Post.gql("ORDER BY date DESC"))
+	posts = list(Post.gql("ORDER BY created DESC"))
+	self.render("list.html", posts=posts)
 
 class AddHandler(BaseTemplateHandler):
     def get(self):
@@ -232,12 +274,24 @@ class ShowHandler(BaseTemplateHandler):
 	    self.redirect("/")
 	self.render("show.html", post=p)
 
+class JsonListHandler(ListHandler):
+    def get(self):
+	self.renderer_set('json')
+	ListHandler.get(self)
+
+class JsonShowHandler(ShowHandler):
+    def get(self, post_id):
+	self.renderer_set('json')
+	ShowHandler.get(self, post_id)
+
 application = webapp2.WSGIApplication([
     ('/welcome', WelcomeHandler),
     ('/signup', SignupHandler),
     ('/login', LoginHandler),
     ('/logout', LogoutHandler),
     ('/', ListHandler),
+    ('/.json', JsonListHandler),
     ('/newpost', AddHandler),
     ('/show/(\d+)', ShowHandler),
+    ('/show/(\d+).json', JsonShowHandler),
     ], debug=True)
