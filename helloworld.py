@@ -251,7 +251,7 @@ class Post(db.Model):
 
 class ListHandler(BaseTemplateHandler):
     def get(self):
-	posts = list(Post.gql("ORDER BY created DESC"))
+	posts = list(Post.gql("ORDER BY created DESC LIMIT 10"))
 	self.render("list.html", posts=posts)
 
 class AddHandler(BaseTemplateHandler):
