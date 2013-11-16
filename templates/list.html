@@ -7,10 +7,10 @@
   {% for p in posts %}
     <div class="post">
       <div class="post-subject"><a href="/show/{{p.key().id()}}">{{p.subject}}</a></div>
-      <div class="post-content">{{p.content}}</div>
-      <div class="post-date">{{p.date}}</div>
+      <div class="post-content">{{p.content[:50] + (p.content[50:] and '...')}}</div>
+      <hr>
+      <div class="post-date">{{p.created}}</div>
     </div>
-    <hr>
   {% endfor %}
 
 {% endblock %}

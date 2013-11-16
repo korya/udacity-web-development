@@ -89,7 +89,6 @@ input[type=submit] {
 .post-subject {
     font-size: 24px;
     font-weight: bold;
-
     text-decoration: none;
     color: #333;
 }
@@ -101,9 +100,9 @@ input[type=submit] {
 .post-date {
     position: relative;
     right: 0px;
+    text-align: right;
     bottom: 0px;
     color: #999;
-
 }
 
 .post-content {
