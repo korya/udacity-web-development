@@ -116,3 +116,11 @@ input[type=submit] {
     color: gray;
     font-size: 12px;
 }
+
+.generation-time {
+    position: relative;
+    right: 0px;
+    text-align: right;
+    bottom: 0px;
+    color: #999;
+}

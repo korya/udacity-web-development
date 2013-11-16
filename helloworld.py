@@ -7,7 +7,9 @@ import hmac
 import random
 import string
 import json
+import time
 from google.appengine.ext import db
+from google.appengine.api import memcache
 
 template_dir = os.path.join(os.path.dirname(__file__), 'templates')
 jinja_env = jinja2.Environment(loader = jinja2.FileSystemLoader(template_dir),
@@ -48,6 +50,7 @@ class JsonRenderer(Renderer):
 	return ('application/json; charset=UTF-8', content)
 
 class BaseTemplateHandler(webapp2.RequestHandler):
+    MEMCACHE_LAST_10 = 'ListHandler::last-10-posts'
     RENDERER_FIELD = 'my__renderer'
     def __init__(self, request, response):
 	webapp2.RequestHandler.__init__(self, request, response)
@@ -251,8 +254,14 @@ class Post(db.Model):
 
 class ListHandler(BaseTemplateHandler):
     def get(self):
-	posts = list(Post.gql("ORDER BY created DESC LIMIT 10"))
-	self.render("list.html", posts=posts)
+	res = memcache.get(BaseTemplateHandler.MEMCACHE_LAST_10)
+	if res is None:
+	    posts = list(Post.gql("ORDER BY created DESC LIMIT 10"))
+	    gen_time = time.time()
+	    memcache.set(BaseTemplateHandler.MEMCACHE_LAST_10, (posts, gen_time))
+	else:
+	    posts, gen_time = res
+	self.render("list.html", posts=posts, time=(time.time() - gen_time))
 
 class AddHandler(BaseTemplateHandler):
     def get(self):
@@ -266,6 +275,7 @@ class AddHandler(BaseTemplateHandler):
 	    p = Post(subject=subject, content=content)
 	    p.put()
 	    self.redirect("/show/%s" % p.key().id())
+	    memcache.delete(BaseTemplateHandler.MEMCACHE_LAST_10)
 
 class ShowHandler(BaseTemplateHandler):
     def get(self, post_id):
