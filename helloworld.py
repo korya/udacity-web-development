@@ -15,6 +15,25 @@ template_dir = os.path.join(os.path.dirname(__file__), 'templates')
 jinja_env = jinja2.Environment(loader = jinja2.FileSystemLoader(template_dir),
 	autoescape=True)
 
+class MyMemcache:
+    @staticmethod
+    def __key(key):
+	return 'MyMemcache::' + key
+    @staticmethod
+    def get(key):
+	res = memcache.get(MyMemcache.__key(key))
+	if res is None:
+	    return None, 0.0
+	value, setTime = res
+	return value, time.time() - setTime
+    @staticmethod
+    def set(key, value):
+	setTime = time.time()
+	memcache.set(MyMemcache.__key(key), (value, setTime))
+    @staticmethod
+    def invalidate(key):
+	memcache.delete(MyMemcache.__key(key))
+
 class SaltyHMAC:
     @staticmethod
     def __make_salt(length=5):
@@ -254,14 +273,11 @@ class Post(db.Model):
 
 class ListHandler(BaseTemplateHandler):
     def get(self):
-	res = memcache.get(BaseTemplateHandler.MEMCACHE_LAST_10)
-	if res is None:
+	posts, age = MyMemcache.get(BaseTemplateHandler.MEMCACHE_LAST_10)
+	if posts is None:
 	    posts = list(Post.gql("ORDER BY created DESC LIMIT 10"))
-	    gen_time = time.time()
-	    memcache.set(BaseTemplateHandler.MEMCACHE_LAST_10, (posts, gen_time))
-	else:
-	    posts, gen_time = res
-	self.render("list.html", posts=posts, time=(time.time() - gen_time))
+	    MyMemcache.set(BaseTemplateHandler.MEMCACHE_LAST_10, posts)
+	self.render("list.html", posts=posts, time=age)
 
 class AddHandler(BaseTemplateHandler):
     def get(self):
@@ -275,14 +291,19 @@ class AddHandler(BaseTemplateHandler):
 	    p = Post(subject=subject, content=content)
 	    p.put()
 	    self.redirect("/show/%s" % p.key().id())
-	    memcache.delete(BaseTemplateHandler.MEMCACHE_LAST_10)
+	    MyMemcache.invalidate(BaseTemplateHandler.MEMCACHE_LAST_10)
 
 class ShowHandler(BaseTemplateHandler):
+    MEMCACHE_PERM_PREFIX = 'ShowHandler::permalink::'
     def get(self, post_id):
-	p = Post.get_by_id(int(post_id))
-	if not p:
-	    self.redirect("/")
-	self.render("show.html", post=p)
+	post, age = MyMemcache.get(ShowHandler.MEMCACHE_PERM_PREFIX + post_id)
+	if post is None:
+	    post = Post.get_by_id(int(post_id))
+	    if not post:
+		self.redirect("/")
+		return
+	    MyMemcache.set(ShowHandler.MEMCACHE_PERM_PREFIX + post_id, post)
+	self.render("show.html", post=post, time=age)
 
 class JsonListHandler(ListHandler):
     def get(self):
