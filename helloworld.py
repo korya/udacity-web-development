@@ -33,6 +33,9 @@ class MyMemcache:
     @staticmethod
     def invalidate(key):
 	memcache.delete(MyMemcache.__key(key))
+    @staticmethod
+    def flush():
+	memcache.flush_all()
 
 class SaltyHMAC:
     @staticmethod
@@ -315,6 +318,11 @@ class JsonShowHandler(ShowHandler):
 	self.renderer_set('json')
 	ShowHandler.get(self, post_id)
 
+class CacheFlushHandler(BaseTemplateHandler):
+    def get(self):
+	MyMemcache.flush()
+	self.redirect("/")
+
 application = webapp2.WSGIApplication([
     ('/welcome', WelcomeHandler),
     ('/signup', SignupHandler),
@@ -325,4 +333,5 @@ application = webapp2.WSGIApplication([
     ('/newpost', AddHandler),
     ('/show/(\d+)', ShowHandler),
     ('/show/(\d+).json', JsonShowHandler),
+    ('/flush', CacheFlushHandler),
     ], debug=True)
