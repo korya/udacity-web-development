@@ -1,0 +1,27 @@
+<table>
+  <tr>
+    <td width="60%">
+	<!-- Empty cell -->
+    </td>
+    <td width="15%">
+	{% if user %}
+	  {% if edit %}
+	    <a href="{{page.path if page}}">view</a> | 
+	  {% else %}
+	    <a href="/_edit{{page.path if page}}">edit</a> | 
+	  {% endif %}
+	{% endif %}
+	<a href="/">history</a>
+    </td>
+    <td width="10%">
+	<!-- Empty cell -->
+    </td>
+    <td width="15%">
+	{% if user %}
+	  {{user}}(<a href="/logout">logout</a>)
+        {% else %}
+	  <a href="/login">login</a> | <a href="/signup">signup</a>
+	{% endif %}
+    </td>
+  </tr>
+</table>

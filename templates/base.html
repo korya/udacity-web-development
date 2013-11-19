@@ -6,14 +6,22 @@
 </head>
 
 <body>
-    <div class="main-title"><a href="/">My Blog</a></div>
+    <div class="main-panel">
+	{% include "main-panel.html" %}
+    </div>
 
     <div id="content">
 	{% block content %}
 	{% endblock %}
     </div>
 
-    <div id="content" class="error" id="debug"><b>{{debug}}</b></div>
+    {% if time is defined %}
+      <br><br><br>
+      <div class="generation-time">Queried {{time}} seconds ago</div>
+    {% endif %}
+
+    <br><br><br>
+    <div id="content" class="error" id="debug"><pre>{{debug}}</pre></div>
 
 </body>
 

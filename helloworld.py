@@ -50,7 +50,7 @@ class JsonRenderer(Renderer):
 class BaseTemplateHandler(webapp2.RequestHandler):
     RENDERER_FIELD = 'my__renderer'
     def __init__(self, request, response):
-	webapp2.RequestHandler.__init__(self, request, response)
+	self.initialize(request, response)
 	self.renderers = {}
 	self.renderers['json'] = JsonRenderer()
 	self.renderers['default'] = JinjaRenderer()
@@ -226,8 +226,85 @@ class LogoutHandler(AuthorizeHandler):
 	self.unauthorize()
 	self.redirect("/signup");
 
+class Page(db.Model):
+    content = db.TextProperty(required = False)
+    created = db.DateTimeProperty(auto_now_add = True)
+    last_modified = db.DateTimeProperty(auto_now = True)
+    def toJson(self):
+	return {
+		'id': str(self.key().id()),
+		'content': str(self.content),
+		'created': str(self.created),
+		'last_modified': str(self.last_modified),
+		};
+    def __repr__(self):
+	return json.dumps(self.toJson())
+
+class BaseWikiPage(AuthorizeHandler):
+    def getDebugStr(self, page, user):
+	if not page:
+	    page = Page(key_name='???', parent=self.getKey())
+	d = "authorizedUser='%s'\n" % user
+	d += "pageId='%s'\n" % page.key().id_or_name()
+	d += "req headers = {\n"
+	for h in sorted(self.request.headers):
+	    d += "  '%s': '%s'\n" % (h, self.request.headers[h])
+	d += "}\n"
+	return d
+    def __init__(self, request, response):
+	AuthorizeHandler.__init__(self, request, response)
+	self.authorizedUser = self.authorize()
+    def getKey(self, pageId=None):
+	if pageId:
+	    return db.Key.from_path('WikiPage', 'Root', 'Page', pageId)
+	return db.Key.from_path('WikiPage', 'Root')
+    def getPage(self, pageId):
+	page = db.get(self.getKey(pageId))
+	if page:
+	    page.path = page.key().id_or_name() # Should be the same as pageId
+	return page
+    def setPage(self, pageId, content):
+	page = self.getPage(pageId)
+	if page:
+	    page.content = content
+	else:
+	    page = Page(key_name=pageId, content=content, parent=self.getKey())
+	page.put()
+    def render(self, template, page, user, *a, **kw):
+	AuthorizeHandler.render(self, template, page=page, user=user,
+		debug=self.getDebugStr(page, user), *a, **kw)
+
+class EditWikiPage(BaseWikiPage):
+    def get(self, pageId):
+	username = self.authorize()
+	if not username:
+	    self.redirect(pageId)
+	    return
+	page = self.getPage(pageId)
+	self.render("edit.html", page, username, edit=True)
+    def post(self, pageId):
+	username = self.authorize()
+	if not username:
+	    self.redirect(pageId)
+	    return
+	newPageContent = self.request.get("content")
+	self.setPage(pageId, newPageContent)
+	self.redirect(pageId)
+
+class ShowWikiPage(BaseWikiPage):
+    def get(self, pageId):
+	username = self.authorize()
+	page = self.getPage(pageId)
+	if username and not page:
+	    self.redirect('/_edit' + pageId)
+	    return
+	self.render("show.html", page, username)
+
+PAGE_RE = r'(/(?:[a-zA-Z0-9_-]+/?)*)'
 application = webapp2.WSGIApplication([
     ('/signup', SignupHandler),
     ('/login', LoginHandler),
     ('/logout', LogoutHandler),
+    ('/_edit' + PAGE_RE, EditWikiPage),
+    (PAGE_RE, ShowWikiPage),
     ], debug=True)
