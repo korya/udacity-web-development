@@ -7,6 +7,7 @@ import hmac
 import random
 import string
 import json
+from urlparse import urlparse
 from google.appengine.ext import db
 
 template_dir = os.path.join(os.path.dirname(__file__), 'templates')
@@ -201,8 +202,28 @@ class UserValidate():
 		    passwd_salt=hpass,
 		    email=self.email.value)
 
-class SignupHandler(AuthorizeHandler):
+class GetBackHandler(AuthorizeHandler):
+    PATH_COOKIE = 'LastPath'
+    def getRequestRefererPath(self):
+	ref = self.request.headers.get('Referer')
+	if ref:
+	    return urlparse(ref).path
+	return '/'
+    def popBackPath(self):
+	path = self.getCookie(GetBackHandler.PATH_COOKIE) or '/'
+	self.remCookie(GetBackHandler.PATH_COOKIE)
+	return path
+    def saveBackPath(self):
+	if self.getCookie(GetBackHandler.PATH_COOKIE):
+	    return # Avoid overriding
+	path = self.getRequestRefererPath()
+	if not path or path == '' or path == '/':
+	    return
+	self.addCookie(GetBackHandler.PATH_COOKIE, path)
+
+class SignupHandler(GetBackHandler):
     def get(self):
+	self.saveBackPath()
 	self.render("signup.html", user_data=UserValidate())
     def post(self):
 	u = UserValidate()
@@ -215,12 +236,13 @@ class SignupHandler(AuthorizeHandler):
 	    user = u.toUser()
 	    user.put()
 	    self.makeAuthorized(user.username)
-	    self.redirect("/welcome")
+	    self.redirect(self.popBackPath())
 	else:
 	    self.render("signup.html", user_data=u)
 
-class LoginHandler(AuthorizeHandler):
+class LoginHandler(GetBackHandler):
     def get(self):
+	self.saveBackPath()
 	self.render("login.html")
     def post(self):
 	u = UserValidate()
@@ -229,14 +251,15 @@ class LoginHandler(AuthorizeHandler):
 	u.validate()
 	if u.isValid():
 	    self.makeAuthorized(u.username.value)
-	    self.redirect("/welcome")
+	    self.redirect(self.popBackPath())
 	else:
 	    self.render("login.html", error="Invalid login")
 
-class LogoutHandler(AuthorizeHandler):
+class LogoutHandler(GetBackHandler):
     def get(self):
+	path = self.getRequestRefererPath()
 	self.unauthorize()
-	self.redirect("/signup");
+	self.redirect(path)
 
 class Page(db.Model):
     content = db.TextProperty(required = False)
@@ -252,7 +275,7 @@ class Page(db.Model):
     def __repr__(self):
 	return json.dumps(self.toJson())
 
-class BaseWikiPage(AuthorizeHandler):
+class BaseWikiPage(GetBackHandler):
     def getDebugStr(self, page, user):
 	if not page:
 	    page = Page(key_name='???', parent=self.getKey())
@@ -264,7 +287,7 @@ class BaseWikiPage(AuthorizeHandler):
 	d += "}\n"
 	return d
     def __init__(self, request, response):
-	AuthorizeHandler.__init__(self, request, response)
+	GetBackHandler.__init__(self, request, response)
 	self.authorizedUser = self.authorize()
     def getKey(self, pageId=None):
 	if pageId:
@@ -283,11 +306,12 @@ class BaseWikiPage(AuthorizeHandler):
 	    page = Page(key_name=pageId, content=content, parent=self.getKey())
 	page.put()
     def render(self, template, page, user, *a, **kw):
-	AuthorizeHandler.render(self, template, page=page, user=user,
+	GetBackHandler.render(self, template, page=page, user=user,
 		debug=self.getDebugStr(page, user), *a, **kw)
 
 class EditWikiPage(BaseWikiPage):
     def get(self, pageId):
+	self.popBackPath()
 	username = self.authorize()
 	if not username:
 	    self.redirect(pageId)
@@ -295,6 +319,7 @@ class EditWikiPage(BaseWikiPage):
 	page = self.getPage(pageId)
 	self.render("edit.html", page, username, edit=True)
     def post(self, pageId):
+	self.popBackPath()
 	username = self.authorize()
 	if not username:
 	    self.redirect(pageId)
@@ -305,6 +330,7 @@ class EditWikiPage(BaseWikiPage):
 
 class ShowWikiPage(BaseWikiPage):
     def get(self, pageId):
+	self.popBackPath()
 	username = self.authorize()
 	page = self.getPage(pageId)
 	if username and not page:
