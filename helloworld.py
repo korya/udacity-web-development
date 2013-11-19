@@ -307,8 +307,7 @@ class BaseWikiPage(GetBackHandler):
 	    page = Page(key_name=pageId, content=content, parent=self.getKey())
 	page.put()
     def render(self, template, page, user, *a, **kw):
-	GetBackHandler.render(self, template, page=page, user=user,
-		debug=self.getDebugStr(page, user), *a, **kw)
+	GetBackHandler.render(self, template, page=page, user=user, *a, **kw)
 
 class EditWikiPage(BaseWikiPage):
     def get(self, pageId):
