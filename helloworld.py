@@ -72,28 +72,40 @@ class BaseTemplateHandler(webapp2.RequestHandler):
 		return self.renderers[getattr(self.request, BaseTemplateHandler.RENDERER_FIELD)]
 	return self.renderers['default']
 
-class AuthorizeHandler(BaseTemplateHandler):
-    AUTH_COOKIE='UID'
-    AUTH_SECRET='0yaeb00'
+class EasyCookieHandler(BaseTemplateHandler):
     DATE_IN_PAST='Thu, 01 Jan 1970 00:00:00 GMT'
-    def make_token(self, username):
-	sig = hmac.new(AuthorizeHandler.AUTH_SECRET, username, hashlib.sha256)
-	return "%s|%s" % (username, sig.hexdigest())
-    def extract_username(self, token):
-	username = token.split("|", 1)[0]
-	if token == self.make_token(username):
-	    return username
-    def makeAuthorized(self, username):
-	token = str(self.make_token(username))
+    def addCookie(self, name, value):
+	value = value.encode('ascii', 'ignore')
 	self.response.headers.add_header('Set-Cookie', '%s=%s; Path=/' %
-		(AuthorizeHandler.AUTH_COOKIE, token))
-    def authorize(self):
-	token = self.request.cookies.get(AuthorizeHandler.AUTH_COOKIE)
-	if token:
-	    return self.extract_username(token)
-    def unauthorize(self):
+		(name, value))
+    def remCookie(self, name):
 	self.response.headers.add_header('Set-Cookie', '%s=; Path=/; expires=%s' %
-		(AuthorizeHandler.AUTH_COOKIE, AuthorizeHandler.DATE_IN_PAST))
+		(name, EasyCookieHandler.DATE_IN_PAST))
+    def getCookie(self, name):
+	return self.request.cookies.get(name)
+
+class SafeCookieHandler(EasyCookieHandler):
+    AUTH_SECRET='0yaeb00'
+    def __sign_msg(self, msg):
+	sig = hmac.new(SafeCookieHandler.AUTH_SECRET, msg, hashlib.sha256)
+	return "%s|%s" % (msg, sig.hexdigest().encode('ascii', 'ignore'))
+    def addCookie(self, name, value):
+	EasyCookieHandler.addCookie(self, name, self.__sign_msg(value))
+    def getCookie(self, name):
+	signed_val = EasyCookieHandler.getCookie(self, name)
+	if signed_val:
+	    val = signed_val.split("|", 1)[0]
+	    if signed_val == self.__sign_msg(val):
+		return val
+
+class AuthorizeHandler(SafeCookieHandler):
+    AUTH_COOKIE='UID'
+    def makeAuthorized(self, username):
+	self.addCookie(AuthorizeHandler.AUTH_COOKIE, username)
+    def authorize(self):
+	return self.getCookie(AuthorizeHandler.AUTH_COOKIE)
+    def unauthorize(self):
+	self.remCookie(AuthorizeHandler.AUTH_COOKIE)
 
 class Param:
     def __init__(self, value="", err_msg="", rexp=None):
