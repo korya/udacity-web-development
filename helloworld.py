@@ -7,35 +7,11 @@ import hmac
 import random
 import string
 import json
-import time
 from google.appengine.ext import db
-from google.appengine.api import memcache
 
 template_dir = os.path.join(os.path.dirname(__file__), 'templates')
 jinja_env = jinja2.Environment(loader = jinja2.FileSystemLoader(template_dir),
 	autoescape=True)
-
-class MyMemcache:
-    @staticmethod
-    def __key(key):
-	return 'MyMemcache::' + key
-    @staticmethod
-    def get(key):
-	res = memcache.get(MyMemcache.__key(key))
-	if res is None:
-	    return None, 0.0
-	value, setTime = res
-	return value, time.time() - setTime
-    @staticmethod
-    def set(key, value):
-	setTime = time.time()
-	memcache.set(MyMemcache.__key(key), (value, setTime))
-    @staticmethod
-    def invalidate(key):
-	memcache.delete(MyMemcache.__key(key))
-    @staticmethod
-    def flush():
-	memcache.flush_all()
 
 class SaltyHMAC:
     @staticmethod
@@ -72,7 +48,6 @@ class JsonRenderer(Renderer):
 	return ('application/json; charset=UTF-8', content)
 
 class BaseTemplateHandler(webapp2.RequestHandler):
-    MEMCACHE_LAST_10 = 'ListHandler::last-10-posts'
     RENDERER_FIELD = 'my__renderer'
     def __init__(self, request, response):
 	webapp2.RequestHandler.__init__(self, request, response)
@@ -232,14 +207,6 @@ class SignupHandler(AuthorizeHandler):
 	else:
 	    self.render("signup.html", user_data=u)
 
-class WelcomeHandler(AuthorizeHandler):
-    def get(self):
-	username = self.authorize()
-	if username:
-	    self.render("welcome.html", username=username)
-	else:
-	    self.redirect("/signup");
-
 class LoginHandler(AuthorizeHandler):
     def get(self):
 	self.render("login.html")
@@ -259,79 +226,8 @@ class LogoutHandler(AuthorizeHandler):
 	self.unauthorize()
 	self.redirect("/signup");
 
-class Post(db.Model):
-    subject = db.StringProperty(required = False)
-    content = db.TextProperty(required = False)
-    created = db.DateTimeProperty(auto_now_add = True)
-    last_modified = db.DateTimeProperty(auto_now = True)
-    def toJson(self):
-	return {
-		'subject': str(self.subject),
-		'content': str(self.subject),
-		'created': str(self.created),
-		'last_modified': str(self.last_modified),
-		};
-    def __repr__(self):
-	return json.dumps(self.toJson())
-
-class ListHandler(BaseTemplateHandler):
-    def get(self):
-	posts, age = MyMemcache.get(BaseTemplateHandler.MEMCACHE_LAST_10)
-	if posts is None:
-	    posts = list(Post.gql("ORDER BY created DESC LIMIT 10"))
-	    MyMemcache.set(BaseTemplateHandler.MEMCACHE_LAST_10, posts)
-	self.render("list.html", posts=posts, time=age)
-
-class AddHandler(BaseTemplateHandler):
-    def get(self):
-	self.render("newpost.html")
-    def post(self):
-	subject = self.request.get("subject") 
-	content = self.request.get("content")
-	if not subject or not content:
-	    self.render("newpost.html", subject=subject, content=content, error = "Fuck you!")
-	else:
-	    p = Post(subject=subject, content=content)
-	    p.put()
-	    self.redirect("/show/%s" % p.key().id())
-	    MyMemcache.invalidate(BaseTemplateHandler.MEMCACHE_LAST_10)
-
-class ShowHandler(BaseTemplateHandler):
-    MEMCACHE_PERM_PREFIX = 'ShowHandler::permalink::'
-    def get(self, post_id):
-	post, age = MyMemcache.get(ShowHandler.MEMCACHE_PERM_PREFIX + post_id)
-	if post is None:
-	    post = Post.get_by_id(int(post_id))
-	    if not post:
-		self.redirect("/")
-		return
-	    MyMemcache.set(ShowHandler.MEMCACHE_PERM_PREFIX + post_id, post)
-	self.render("show.html", post=post, time=age)
-
-class JsonListHandler(ListHandler):
-    def get(self):
-	self.renderer_set('json')
-	ListHandler.get(self)
-
-class JsonShowHandler(ShowHandler):
-    def get(self, post_id):
-	self.renderer_set('json')
-	ShowHandler.get(self, post_id)
-
-class CacheFlushHandler(BaseTemplateHandler):
-    def get(self):
-	MyMemcache.flush()
-	self.redirect("/")
-
 application = webapp2.WSGIApplication([
-    ('/welcome', WelcomeHandler),
     ('/signup', SignupHandler),
     ('/login', LoginHandler),
     ('/logout', LogoutHandler),
-    ('/', ListHandler),
-    ('/.json', JsonListHandler),
-    ('/newpost', AddHandler),
-    ('/show/(\d+)', ShowHandler),
-    ('/show/(\d+).json', JsonShowHandler),
-    ('/flush', CacheFlushHandler),
     ], debug=True)
