@@ -7,6 +7,7 @@ import hmac
 import random
 import string
 import json
+from jinja2 import Markup
 from urlparse import urlparse
 from google.appengine.ext import db
 
@@ -324,7 +325,7 @@ class EditWikiPage(BaseWikiPage):
 	if not username:
 	    self.redirect(pageId)
 	    return
-	newPageContent = self.request.get("content")
+	newPageContent = Markup(self.request.get("content")).unescape()
 	self.setPage(pageId, newPageContent)
 	self.redirect(pageId)
 

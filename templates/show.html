@@ -2,6 +2,6 @@
 
 {% block content %}
 
-  <div class="content">{{page.content if page.content}}</div>
+  <div class="content">{{page.content|safe if page.content}}</div>
 
 {% endblock %}
