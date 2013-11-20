@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+  <table class="page-versions">
+    {% for v in versions %}
+      <tr>
+	  <td>{{ v.created }}</td>
+	  <td>{{ v.content }}</td>
+	<td><a href="{{v.getPath(full=True)}}">view</a></td>
+	{% if user %}
+	  <td><a href="/_edit{{v.getPath(full=True)}}">edit</a></td>
+	{% else %}
+	  <td></td>
+	{% endif %}
+      </tr>
+    {% endfor %}
+  </table>
+
+{% endblock %}

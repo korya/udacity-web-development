@@ -355,8 +355,7 @@ class BaseWikiPage(GetBackHandler):
 	pageVersion = PageVersion(key_name=str(version), content=content, parent=page)
 	pageVersion.put()
     def render(self, template, page, user, *a, **kw):
-	GetBackHandler.render(self, template, page=page, user=user,
-		debug=self.getDebugStr(page, user), *a, **kw)
+	GetBackHandler.render(self, template, page=page, user=user, *a, **kw)
 
 class EditWikiPage(BaseWikiPage):
     def get(self, pageId):
@@ -388,11 +387,20 @@ class ShowWikiPage(BaseWikiPage):
 	    self.redirect('/_edit' + pageId)
 	    return
 	self.render("show.html", pageVersion, username)
+
+class HistoryWikiPage(BaseWikiPage):
+    def get(self, pageId):
+	self.popBackPath()
+	username = self.authorize()
+	page_versions = self.getPageVersions(pageId)
+	self.render("history.html", None, username, versions=page_versions)
+
 PAGE_RE = r'(/(?:[a-zA-Z0-9_-]+/?)*)'
 application = webapp2.WSGIApplication([
     ('/signup', SignupHandler),
     ('/login', LoginHandler),
     ('/logout', LogoutHandler),
     ('/_edit' + PAGE_RE, EditWikiPage),
+    ('/_history' + PAGE_RE, HistoryWikiPage),
     (PAGE_RE, ShowWikiPage),
     ], debug=True)
