@@ -263,15 +263,29 @@ class LogoutHandler(GetBackHandler):
 	self.redirect(path)
 
 class Page(db.Model):
-    content = db.TextProperty(required = False)
     created = db.DateTimeProperty(auto_now_add = True)
-    last_modified = db.DateTimeProperty(auto_now = True)
+    nversions = db.IntegerProperty(default=0)
     def toJson(self):
 	return {
-		'id': str(self.key().id()),
-		'content': str(self.content),
+		'id': str(self.key().id_or_name()),
 		'created': str(self.created),
-		'last_modified': str(self.last_modified),
+		'nversions': self.nversions,
+		};
+    def __repr__(self):
+	return json.dumps(self.toJson())
+
+class PageVersion(db.Model):
+    """
+    Each page-version is stored under the page it belongs to.
+    """
+    content = db.TextProperty(required = False)
+    created = db.DateTimeProperty(auto_now_add = True)
+    def toJson(self):
+	return {
+		'path': str(self.parent_key().id_or_name()),
+		'version': int(self.key().id_or_name()),
+		'created': str(self.created),
+		'content': str(self.content),
 		};
     def __repr__(self):
 	return json.dumps(self.toJson())
@@ -279,13 +293,14 @@ class Page(db.Model):
 class BaseWikiPage(GetBackHandler):
     def getDebugStr(self, page, user):
 	if not page:
-	    page = Page(key_name='???', parent=self.getKey())
+	    page = PageVersion(key_name='-1', parent=self.getKey('???'))
 	d = "authorizedUser='%s'\n" % user
 	d += "pageId='%s'\n" % page.key().id_or_name()
 	d += "req headers = {\n"
 	for h in sorted(self.request.headers):
 	    d += "  '%s': '%s'\n" % (h, self.request.headers[h])
 	d += "}\n"
+	d += "page = " + repr(page)
 	return d
     def __init__(self, request, response):
 	GetBackHandler.__init__(self, request, response)
@@ -294,20 +309,41 @@ class BaseWikiPage(GetBackHandler):
 	if pageId:
 	    return db.Key.from_path('WikiPage', 'Root', 'Page', pageId)
 	return db.Key.from_path('WikiPage', 'Root')
-    def getPage(self, pageId):
-	page = db.get(self.getKey(pageId))
-	if page:
-	    page.path = page.key().id_or_name() # Should be the same as pageId
-	return page
-    def setPage(self, pageId, content):
-	page = self.getPage(pageId)
-	if page:
-	    page.content = content
-	else:
-	    page = Page(key_name=pageId, content=content, parent=self.getKey())
+    def getPageVersions(self, pageId):
+	q = PageVersion.all()
+	q.ancestor(self.getKey(pageId))
+	q.order('-__key__')
+	return list(q)
+    def getPageLatestVersion(self, pageId):
+	res = self.getPageVersions(pageId)
+	if res:
+	    return res[0]
+    def getPageSpecificVersion(self, pageId, version):
+	pageVersion = PageVersion.get_by_key_name(str(version), self.getKey(pageId))
+	if pageVersion:
+	    return pageVersion
+    def getPageVersion(self, pageId, version=None):
+	pageVersion = self.getPageSpecificVersion(pageId, version)
+	if not pageVersion:
+	    pageVersion = self.getPageLatestVersion(pageId)
+	if pageVersion:
+            # Should be the same as pageId
+	    pageVersion.path = pageVersion.parent_key().id_or_name()
+	return pageVersion
+    def addPageVersion(self, pageId, content):
+        # Page and PageVersion are not in the same entity group, thus cannot
+	# be updated atomically. Hence:
+        # (1) allocate version
+        # (2) add the version itself
+	page = Page.get_or_insert(key_name=pageId, parent=self.getKey())
+	page.nversions += 1
+	version = page.nversions
 	page.put()
+	pageVersion = PageVersion(key_name=str(version), content=content, parent=page)
+	pageVersion.put()
     def render(self, template, page, user, *a, **kw):
-	GetBackHandler.render(self, template, page=page, user=user, *a, **kw)
+	GetBackHandler.render(self, template, page=page, user=user,
+		debug=self.getDebugStr(page, user), *a, **kw)
 
 class EditWikiPage(BaseWikiPage):
     def get(self, pageId):
@@ -316,8 +352,8 @@ class EditWikiPage(BaseWikiPage):
 	if not username:
 	    self.redirect(pageId)
 	    return
-	page = self.getPage(pageId)
-	self.render("edit.html", page, username, edit=True)
+	pageVersion = self.getPageVersion(pageId)
+	self.render("edit.html", pageVersion, username, edit=True)
     def post(self, pageId):
 	self.popBackPath()
 	username = self.authorize()
@@ -325,19 +361,18 @@ class EditWikiPage(BaseWikiPage):
 	    self.redirect(pageId)
 	    return
 	newPageContent = Markup(self.request.get("content")).unescape()
-	self.setPage(pageId, newPageContent)
+	self.addPageVersion(pageId, newPageContent)
 	self.redirect(pageId)
 
 class ShowWikiPage(BaseWikiPage):
     def get(self, pageId):
 	self.popBackPath()
 	username = self.authorize()
-	page = self.getPage(pageId)
-	if username and not page:
+	pageVersion = self.getPageVersion(pageId)
+	if username and not pageVersion:
 	    self.redirect('/_edit' + pageId)
 	    return
-	self.render("show.html", page, username)
-
+	self.render("show.html", pageVersion, username)
 PAGE_RE = r'(/(?:[a-zA-Z0-9_-]+/?)*)'
 application = webapp2.WSGIApplication([
     ('/signup', SignupHandler),
