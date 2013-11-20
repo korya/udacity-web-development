@@ -280,9 +280,18 @@ class PageVersion(db.Model):
     """
     content = db.TextProperty(required = False)
     created = db.DateTimeProperty(auto_now_add = True)
+    def setSpecified(self):
+	self.__specified__ = True
+    def isSpecified(self):
+	return hasattr(self, '__specified__') and self.__specified__
+    def getPath(self, full=False):
+	page_path = self.parent_key().id_or_name()
+	if not full and not self.isSpecified():
+	    return page_path
+	return "%s?v=%s" % (page_path, self.key().id_or_name())
     def toJson(self):
 	return {
-		'path': str(self.parent_key().id_or_name()),
+		'path': self.getPath(full=True),
 		'version': int(self.key().id_or_name()),
 		'created': str(self.created),
 		'content': str(self.content),
@@ -323,7 +332,11 @@ class BaseWikiPage(GetBackHandler):
 	if pageVersion:
 	    return pageVersion
     def getPageVersion(self, pageId, version=None):
-	pageVersion = self.getPageSpecificVersion(pageId, version)
+	pageVersion = None
+	if version:
+	    pageVersion = self.getPageSpecificVersion(pageId, version)
+            # Remember that this specific version was requested
+	    pageVersion.setSpecified()
 	if not pageVersion:
 	    pageVersion = self.getPageLatestVersion(pageId)
 	if pageVersion:
@@ -352,7 +365,8 @@ class EditWikiPage(BaseWikiPage):
 	if not username:
 	    self.redirect(pageId)
 	    return
-	pageVersion = self.getPageVersion(pageId)
+	version = self.request.get("v")
+	pageVersion = self.getPageVersion(pageId, version)
 	self.render("edit.html", pageVersion, username, edit=True)
     def post(self, pageId):
 	self.popBackPath()
@@ -368,7 +382,8 @@ class ShowWikiPage(BaseWikiPage):
     def get(self, pageId):
 	self.popBackPath()
 	username = self.authorize()
-	pageVersion = self.getPageVersion(pageId)
+	version = self.request.get("v")
+	pageVersion = self.getPageVersion(pageId, version)
 	if username and not pageVersion:
 	    self.redirect('/_edit' + pageId)
 	    return
